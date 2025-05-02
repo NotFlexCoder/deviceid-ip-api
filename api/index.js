@@ -12,7 +12,7 @@ module.exports = async (req, res) => {
   const device = req.headers['user-agent'];
   const deleteMode = req.query.delete === 'true';
   const sharedIp = req.query.ip;
-  const sharedDevice = req.query.device;
+  const sharedDevice = req.query.device ? decodeURIComponent(req.query.device) : null;
 
   const uri = process.env.MONGO_URI;
 
