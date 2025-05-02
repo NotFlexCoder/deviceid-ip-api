@@ -10,10 +10,10 @@ module.exports = async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
 
   const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
-  const device = req.headers['user-agent'];
+  const device = (req.headers['user-agent'] || '').trim();
   const deleteMode = req.query.delete === 'true';
   const sharedIp = req.query.ip;
-  const sharedDevice = req.query.device ? decodeURIComponent(req.query.device) : null;
+  const sharedDevice = req.query.device ? decodeURIComponent(req.query.device).trim() : null;
 
   const uri = process.env.MONGO_URI;
 
@@ -31,19 +31,16 @@ module.exports = async (req, res) => {
       return res.end(JSON.stringify({ error: 'ip and device query params required for delete' }));
     }
 
-    const exactMatch = await collection.findOne({ ip: sharedIp });
-    if (exactMatch) {
-      const result = await collection.deleteOne({ ip: sharedIp, device: sharedDevice });
-      const stillExists = await collection.findOne({ ip: sharedIp, device: sharedDevice });
+    const result = await collection.deleteMany({ ip: sharedIp, device: sharedDevice });
+    const stillExists = await collection.findOne({ ip: sharedIp, device: sharedDevice });
 
-      return res.end(JSON.stringify({
-        triedToDelete: { ip: sharedIp, device: sharedDevice },
-        result: result,
-        stillExists: !!stillExists
-      }));
-    } else {
-      return res.end(JSON.stringify({ error: 'No matching IP found', ip: sharedIp }));
-    }
+    return res.end(JSON.stringify({
+      status: result.deletedCount > 0 ? 'deleted' : 'not_found',
+      deletedCount: result.deletedCount,
+      stillExists: !!stillExists,
+      ip: sharedIp,
+      device: sharedDevice
+    }));
   }
 
   const exists = await collection.findOne({ ip, device });
