@@ -8,6 +8,7 @@ let cachedClient = null;
 
 module.exports = async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
+
   const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
   const device = req.headers['user-agent'];
   const deleteMode = req.query.delete === 'true';
@@ -30,12 +31,18 @@ module.exports = async (req, res) => {
       return res.end(JSON.stringify({ error: 'ip and device query params required for delete' }));
     }
 
-    const result = await collection.deleteOne({ ip: sharedIp, device: sharedDevice });
+    const exactMatch = await collection.findOne({ ip: sharedIp });
+    if (exactMatch) {
+      const result = await collection.deleteOne({ ip: sharedIp, device: sharedDevice });
+      const stillExists = await collection.findOne({ ip: sharedIp, device: sharedDevice });
 
-    if (result.deletedCount > 0) {
-      return res.end(JSON.stringify({ status: 'deleted', ip: sharedIp, device: sharedDevice }));
+      return res.end(JSON.stringify({
+        triedToDelete: { ip: sharedIp, device: sharedDevice },
+        result: result,
+        stillExists: !!stillExists
+      }));
     } else {
-      return res.end(JSON.stringify({ error: 'not found', ip: sharedIp, device: sharedDevice }));
+      return res.end(JSON.stringify({ error: 'No matching IP found', ip: sharedIp }));
     }
   }
 
