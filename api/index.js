@@ -7,9 +7,13 @@ if (!process.env.MONGO_URI) {
 let cachedClient = null;
 
 module.exports = async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
   const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
-  const mobileId = req.headers['user-agent'] || 'unknown';
-  const query = req.query;
+  const device = req.headers['user-agent'];
+  const deleteMode = req.query.delete === 'true';
+  const sharedIp = req.query.ip;
+  const sharedDevice = req.query.device;
+
   const uri = process.env.MONGO_URI;
 
   if (!cachedClient) {
@@ -20,39 +24,30 @@ module.exports = async (req, res) => {
   const db = cachedClient.db('tracker');
   const collection = db.collection('logs');
 
-  if (req.method === 'GET') {
-    if (query.edit === 'true' && query.oldMobile && query.newMobile) {
-      const result = await collection.updateOne(
-        { mobileId: query.oldMobile, ip },
-        { $set: { mobileId: query.newMobile } }
-      );
-      if (result.matchedCount === 0) {
-        res.statusCode = 404;
-        return res.end(JSON.stringify({ error: 'Record not found to edit' }));
-      }
-      return res.end(JSON.stringify({ status: 'updated', ip, newMobile: query.newMobile }));
+  if (deleteMode) {
+    if (!sharedIp || !sharedDevice) {
+      res.statusCode = 400;
+      return res.end(JSON.stringify({ error: 'ip and device query params required for delete' }));
     }
 
-    if (query.delete === 'true' && query.mobile) {
-      const result = await collection.deleteOne({ mobileId: query.mobile, ip });
-      if (result.deletedCount === 0) {
-        res.statusCode = 404;
-        return res.end(JSON.stringify({ error: 'Record not found to delete' }));
-      }
-      return res.end(JSON.stringify({ status: 'deleted', ip, mobile: query.mobile }));
-    }
+    const result = await collection.deleteOne({ ip: sharedIp, device: sharedDevice });
 
-    const exists = await collection.findOne({ mobileId, ip });
-    if (exists) {
-      res.statusCode = 403;
-      return res.end(JSON.stringify({ error: 'Device already registered', ip, mobileId }));
+    if (result.deletedCount > 0) {
+      return res.end(JSON.stringify({ status: 'deleted', ip: sharedIp, device: sharedDevice }));
+    } else {
+      return res.end(JSON.stringify({ error: 'not found', ip: sharedIp, device: sharedDevice }));
     }
-
-    const entry = { ip, mobileId, time: new Date().toISOString() };
-    await collection.insertOne(entry);
-    return res.end(JSON.stringify({ status: 'saved', ip, mobileId }));
   }
 
-  res.statusCode = 405;
-  res.end(JSON.stringify({ error: 'Method Not Allowed' }));
+  const exists = await collection.findOne({ ip, device });
+
+  if (exists) {
+    res.statusCode = 403;
+    return res.end(JSON.stringify({ error: 'Already used', ip, device }));
+  }
+
+  const entry = { ip, device, time: new Date().toISOString() };
+  await collection.insertOne(entry);
+
+  res.end(JSON.stringify({ status: 'saved', ip, device }));
 };
