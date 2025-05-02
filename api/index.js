@@ -1,24 +1,27 @@
-const fs = require('fs');
-const path = require('path');
+const { MongoClient } = require('mongodb');
+
+if (!process.env.MONGO_URI) {
+  require('dotenv').config();
+}
+
+let cachedClient = null;
 
 module.exports = async (req, res) => {
   const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
   const device = req.headers['user-agent'];
   const entry = { ip, device, time: new Date().toISOString() };
-  const filePath = path.join(__dirname, '..', 'data.json');
-  let data = [];
 
-  if (fs.existsSync(filePath)) {
-    try {
-      const content = fs.readFileSync(filePath, 'utf8');
-      if (content.trim()) data = JSON.parse(content);
-    } catch (e) {
-      data = [];
-    }
+  const uri = process.env.MONGO_URI;
+
+  if (!cachedClient) {
+    cachedClient = new MongoClient(uri);
+    await cachedClient.connect();
   }
 
-  data.push(entry);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+  const db = cachedClient.db('tracker');
+  const collection = db.collection('logs');
+  await collection.insertOne(entry);
+
   res.setHeader('Content-Type', 'application/json');
   res.end(JSON.stringify({ status: 'saved', ip, device }));
 };
