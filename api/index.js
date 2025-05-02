@@ -7,10 +7,16 @@ module.exports = async (req, res) => {
   const entry = { ip, device, time: new Date().toISOString() };
   const filePath = path.join(__dirname, '..', 'data.json');
   let data = [];
+
   if (fs.existsSync(filePath)) {
-    const content = fs.readFileSync(filePath, 'utf8');
-    if (content) data = JSON.parse(content);
+    try {
+      const content = fs.readFileSync(filePath, 'utf8');
+      if (content.trim()) data = JSON.parse(content);
+    } catch (e) {
+      data = [];
+    }
   }
+
   data.push(entry);
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
   res.setHeader('Content-Type', 'application/json');
